@@ -44,6 +44,11 @@ GENERIC_TOKENS = frozenset(
 _BRACKET_RE = re.compile(r"\s*[\(\[（【][^\)\]）】]*[\)\]）】]\s*$")
 _VERSION_RE = re.compile(r"[\s_-]*v?\d+(?:\.\d+){1,3}[\s_-]*$")
 _TOKEN_RE = re.compile(r"[0-9a-z]+")
+_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+#: 单 token 的种子至少要有这么长才参与词边界匹配。``inf`` / ``app`` 这种
+#: 三字母词几乎必然会撞上路径里的片段，实测把 ``setup.exe`` 误判成「未分类」。
+MIN_WORD_TOKEN_LENGTH = 4
 
 
 class SeedDataError(ValueError):
@@ -114,8 +119,25 @@ class SeedIndex:
             if self._is_generic(entry):
                 continue
             self._exact.setdefault(entry.normalized, entry)
-            if entry.tokens:
-                self._by_token.setdefault(entry.tokens, entry)
+            if not self._is_word_matchable(entry):
+                continue
+            self._by_token.setdefault(entry.tokens, entry)
+
+    @staticmethod
+    def _is_word_matchable(seed: SeedName) -> bool:
+        """词边界只对「切词结果能代表原名」的种子成立。
+
+        中文没有空格，``INF 默认安装`` 会被切成 ``("inf",)``——丢掉中文后就剩一个
+        通用三字母词，能撞上任何含 ``inf`` 的路径。这类种子只允许精确匹配。
+        """
+
+        if not seed.tokens:
+            return False
+        if _CJK_RE.search(seed.name):
+            return False
+        if len(seed.tokens) == 1:
+            return len(seed.tokens[0]) >= MIN_WORD_TOKEN_LENGTH
+        return True
 
     @staticmethod
     def _is_generic(seed: SeedName) -> bool:

@@ -66,3 +66,13 @@ coverage: 96/107 = 90%       耗时 1 ms/条
 **词边界匹配的抽样审计**：42 条 word 命中人工看了前 12 条，都是合理配对（`code.exe`→Visual Studio Code、`windowsterminal.exe`→Windows Terminal、`excel.exe`→Microsoft Excel）。有一条 `ddu v18.1.5.6.exe`→「7z SFX」（你在未分类里的一个条目）属于边缘情况，但类别是「未分类」，不影响结果。
 
 **剩余 11 条 unknown**：`workbuddy`、`cc-switch`、`kook`、`gamepp`、`图吧工具箱2026`、`office tool plus`、`seephealthui`、Windows 商店应用等——正是 04 的 AI 要处理的部分。
+
+**2026-11-01 补记（MCP 实测发现的误判）**：通过 MCP 工具实测时发现
+`C:\Windows\...\oem1.inf_amd64\setup.exe` 被判成「未分类 / seed[word]: 'INF 默认安装'」。
+根因是切词把中文整段丢掉，种子「INF 默认安装」退化成 `("inf",)`，撞上了路径里的 `inf`。
+
+修法：含中文的种子只允许精确匹配；单 token 种子至少 4 字符才参与词边界。修完后：
+
+- `setup.exe` → `tool / rule`（系统路径）✅
+- 真实语料：seed 66（exact 30 / word 36）、rule 27、unknown 16 → 覆盖率 **90% → 85%**
+- 少掉的 6 条命中里有一部分原本就是误判；代价是多了 5 条交给 AI，正是设计里预留给 04 的部分。

@@ -98,6 +98,8 @@ classify(exe_path) -> {
 - 规范化：NFKC → 小写 → 去首尾空白 → 去尾部 1–2 层括号 → 去尾部版本号。
 - **精确**：规范化后完全相等 → 可落 `source:"seed"`。
 - **词边界**：按非字母数字切词后整词相等（能救 `OBS Studio` vs `obs64` 的一部分）→ 同样可落 seed。
+  - 限制一：**含中文的种子只允许精确匹配**。中文没有空格，`INF 默认安装` 切词后只剩 `("inf",)`，会撞上任何含 `inf` 的路径（实测把 `setup.exe` 判成了「未分类」）。
+  - 限制二：**单 token 种子至少 4 字符**才参与词边界。`inf`/`app` 这类三字母词必然误伤。
 - **歧义**：同一显示名出现在多个类别 → **视为歧义，不落 seed**，只作为提示词候选。
 - **黑名单**：`microsoft` / `windows` / `x64` / `app` / `setup` / `application` / `desktop` / `download` 等通用词永不参与匹配（实测 `Microsoft` 会命中 39 个 exe）。
 - 只对**存在的文件**做映射；`FileDescription` / `ProductName` 为空时退回文件名与父目录名（实测 7 个这样的 exe 全部靠文件名救回）。

@@ -89,6 +89,21 @@ class SeedLoadingTests(TempDirCase):
         # 子串不是词边界：`OBSStudioPro` 不能算命中。
         self.assertIsNone(index.match("OBSStudioPro"))
 
+    def test_cjk_seed_is_exact_only(self) -> None:
+        # 「INF 默认安装」切词后只剩 ("inf",)，不许靠它去撞路径里的 inf。
+        path = self.seed_file({"未分类": ["INF 默认安装"]})
+        index = load_seeds(path, CATEGORIES)
+        self.assertIsNone(index.match("oem1.inf_amd64"))
+        self.assertIsNotNone(index.match("INF 默认安装"))
+
+    def test_short_single_token_seed_is_not_word_matched(self) -> None:
+        # 3 字符以下的单 token 种子只允许精确匹配；4 字符（如 Code）仍然可以词边界。
+        path = self.seed_file({"工具": ["INF"], "开发": ["Code"]})
+        index = load_seeds(path, CATEGORIES)
+        self.assertIsNone(index.match("some-inf-file"))
+        self.assertIsNotNone(index.match("INF"))
+        self.assertIsNotNone(index.match("Visual Studio Code 64"))
+
     def test_unknown_category_label_is_skipped(self) -> None:
         path = self.seed_file({"不存在的类别": ["QQ"], "通讯": ["WeChat"]})
         index = load_seeds(path, CATEGORIES)
