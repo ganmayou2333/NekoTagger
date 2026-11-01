@@ -32,3 +32,23 @@
 测试覆盖：本地桩 HTTP 服务端到端（真实 `http.server` 起在 127.0.0.1 随机端口）、批次数断言（45 条 = 3 批）、非法类别丢弃并 pending、超时/失败不崩、`--max-batches 1` 只发一次、提示词隐私回归、`reason` 落进 `matched_by`。
 
 **未验证：真实模型调用。** 本机没有配置 `api_key`，所以 `HttpBackend` 只对桩服务验证过——请求格式按 OpenAI 兼容约定写，但没有用真实端点跑过。配置后第一次请先 `--max-batches 1` 试水。
+
+**2026-11-01 补记 —— 真实模型调用已验证。**
+
+之前的「未验证」项解决了：DSH 的凭据库里存着 `DEEPSEEK_API_KEY`（字面量，`sk-…`），把它接进 `%LOCALAPPDATA%\NekoTagger\config.local.json`（`base_url=https://api.deepseek.com/v1`、`model=deepseek-chat`）后，真实调用一次成功：
+
+```text
+单条：classify <path> --ai  → 1.2 秒返回，带英文理由
+批量：corpus                 → 1 批 16 条，全接受，0 失败，3.6 秒
+```
+
+16 条里模型与 agent 人工判断**一致 12 条、不同 4 条**：
+
+| 应用 | agent | 模型 | 评价 |
+| --- | --- | --- | --- |
+| `winstore.app.exe` | tool | browse | 都可辩（应用商店） |
+| `cc-switch.exe` | dev | uncategorized | agent 对：CC Switch 是 Claude Code 配置切换器，模型不认识 |
+| `office tool plus.exe` | tool | office | 模型更贴（Office 部署工具） |
+| `workbuddy.exe` | office | uncategorized | 双方都没把握，模型更诚实 |
+
+结论：真实链路可用，成本（16 条 1 批 3.6 秒）远低于预期。分歧集中在「冷门中文工具」，属于模型知识边界，用 `override` 修即可。
