@@ -23,13 +23,19 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done（2026-11-01）
 
-- [ ] 命中缓存时**不发起任何 AI 调用**（假后端计数为 0）
-- [ ] 未命中但规则/种子命中时，同样不调用 AI
-- [ ] `pending` 到 3 次后不再重试，最终类别是 `uncategorized`
-- [ ] 清单里删掉一个 category id 后：只有引用该 id 的条目变成 `pending`，其余条目保留（两份清单对比断言）
-- [ ] 原子写：写入中途异常不会留下半截 `cache.json`，旧文件仍可读
-- [ ] `cache.json` 损坏 / version 未知 → 空缓存 + 警告
-- [ ] 规范化：`"C:\Foo\Bar.EXE"`、`c:/foo/bar.exe `、`"c:\\foo\\bar.exe"` 命中同一条
-- [ ] 默认位置在 `%LOCALAPPDATA%\NekoTagger\`，`--cache` 可覆盖
+- [x] 命中缓存时**不发起任何 AI 调用**（假后端计数为 0）
+- [x] 未命中但规则/种子命中时，同样不调用 AI
+- [x] `pending` 到 3 次后不再重试，最终类别是 `uncategorized`
+- [x] 清单里删掉一个 category id 后：只有引用该 id 的条目变成 `pending`，其余条目保留（两份清单对比断言）
+- [x] 原子写：写入中途异常不会留下半截 `cache.json`，旧文件仍可读
+- [x] `cache.json` 损坏 / version 未知 → 空缓存 + 警告
+- [x] 规范化：`"C:\Foo\Bar.EXE"`、`c:/foo/bar.exe `、`"c:\\foo\\bar.exe"` 命中同一条
+- [x] 默认位置在 `%LOCALAPPDATA%\NekoTagger\`，`--cache` 可覆盖
+
+## Comments
+
+**2026-11-01 — 完成。** `nekotagger/cache.py`：位置默认 `%LOCALAPPDATA%\NekoTagger\cache.json`，原子写（临时文件 + `os.replace`），pending 上限 3 次，清单变更时**只**把未知 category 的条目打回 pending（其余保留）。
+
+测试覆盖：命中不调 AI、二次运行 0 次模型调用、pending 上限、选择性失效（用两份清单对比）、损坏与未知 version 降级、`.tmp` 不残留。

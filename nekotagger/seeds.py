@@ -162,6 +162,31 @@ class SeedIndex:
                 return SeedMatch(entry, "word", candidate)
         return None
 
+    def hints_for(self, text: str, limit: int = 20) -> list["SeedName"]:
+        """为提示词挑相似种子：token 重叠 + 规范化相等。只作参考，不作结论。"""
+
+        normalized = normalize_display_name(text)
+        tokens = set(tokenize(text))
+        scored: list[tuple[int, SeedName]] = []
+        for entry in self._exact.values():
+            score = 0
+            if entry.normalized == normalized:
+                score += 5
+            score += len(tokens & set(entry.tokens))
+            if normalized and (normalized in entry.normalized or entry.normalized in normalized):
+                score += 1
+            if score:
+                scored.append((score, entry))
+        scored.sort(key=lambda pair: (-pair[0], pair[1].name))
+        return [entry for _score, entry in scored[:limit]]
+
+    def representatives(self, category_id: str, limit: int = 2) -> list["SeedName"]:
+        """某个类别下挑几个代表，供提示词在「没有相似项」时兜底。"""
+
+        picked = [entry for entry in self._exact.values() if entry.category_id == category_id]
+        picked.sort(key=lambda entry: entry.name)
+        return picked[:limit]
+
     def best(self, candidates: Iterable[str]) -> SeedMatch | None:
         """按候选顺序取第一个精确命中；没有精确的再取第一个词边界命中。"""
 

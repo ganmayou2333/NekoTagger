@@ -13,12 +13,22 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done（2026-11-01）
 
-- [ ] 用本地桩 HTTP 服务端到端跑通：N 条待判 → 断言请求次数 = 批次数（不是 N 次）
-- [ ] 桩返回非法 category → 该条丢弃并进 `pending`，其余条目正常落缓存
-- [ ] 桩超时 / 500 → 进程不崩、该批进 `pending`，统计里能看到失败批数
-- [ ] `--max-batches 1` 时只发一次请求，剩余留 `pending`
-- [ ] 断言发出去的提示词字符串里**不含**窗口标题/用户名（隐私回归）
-- [ ] 未配置 `api_key` 时给出可读提示并跳过 AI，规则/种子/缓存流程照常
-- [ ] 模型返回的 `reason` 出现在该条目的 `matched_by` 里
+- [x] 用本地桩 HTTP 服务端到端跑通：N 条待判 → 断言请求次数 = 批次数（不是 N 次）
+- [x] 桩返回非法 category → 该条丢弃并进 `pending`，其余条目正常落缓存
+- [x] 桩超时 / 500 → 进程不崩、该批进 `pending`，统计里能看到失败批数
+- [x] `--max-batches 1` 时只发一次请求，剩余留 `pending`
+- [x] 断言发出去的提示词字符串里**不含**窗口标题/用户名（隐私回归）
+- [x] 未配置 `api_key` 时给出可读提示并跳过 AI，规则/种子/缓存流程照常
+- [x] 模型返回的 `reason` 出现在该条目的 `matched_by` 里
+
+## Comments
+
+**2026-11-01 — 完成，但有一个未验证项必须说明。**
+
+已实现：`nekotagger/ai.py`（OpenAI 兼容 `chat/completions`，stdlib `urllib`，默认 20 条/批、10 秒超时、不重试）、`pipeline.py`（批量编排、失败进 pending、`--max-batches`）、提示词只含路径与显示名 + ≤20 条种子参考。
+
+测试覆盖：本地桩 HTTP 服务端到端（真实 `http.server` 起在 127.0.0.1 随机端口）、批次数断言（45 条 = 3 批）、非法类别丢弃并 pending、超时/失败不崩、`--max-batches 1` 只发一次、提示词隐私回归、`reason` 落进 `matched_by`。
+
+**未验证：真实模型调用。** 本机没有配置 `api_key`，所以 `HttpBackend` 只对桩服务验证过——请求格式按 OpenAI 兼容约定写，但没有用真实端点跑过。配置后第一次请先 `--max-batches 1` 试水。
