@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 
 _QUOTES = ("'", '"')
@@ -20,6 +21,8 @@ def normalize_exe_path(raw: object) -> str:
 
     if raw is None:
         raise ValueError("路径为空")
+    if hasattr(raw, "__fspath__"):  # pathlib.Path 等
+        raw = os.fspath(raw)
     if not isinstance(raw, str):
         raise ValueError(f"路径必须是字符串，收到 {type(raw).__name__}")
 

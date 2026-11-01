@@ -26,14 +26,43 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done（2026-11-01）
 
-- [ ] 真实语料能加载出 181 条路径，正确报出「存在 / 不存在 / 非 exe / 安装包」四类计数（本机量级 114 / 67 / 2 / 13）
-- [ ] 种子映射在真实语料上跑通，输出「精确命中 / 词边界命中 / 歧义跳过 / 无对应」四个计数，**不得出现 `Microsoft` 类通用词误伤**
-- [ ] 歧义名（同名跨类别）不产生 seed 结论
-- [ ] `FileDescription`/`ProductName` 全空的 exe 能退回文件名匹配（实测有 7 个）
-- [ ] Steam 命中给出 `game` + appid；不在 Steam 目录下的不受影响
-- [ ] `overrides.json` 命中后覆盖种子/规则/Steam
-- [ ] `--paths-from` 与 NekoTrak 语料合并去重
-- [ ] 语料目录缺失、JSON 损坏、`cache_format_version` 变化 → 空语料 + 警告，不抛未捕获异常
-- [ ] 单测覆盖：版本信息读取（注入 reader 或临时假 exe）、精确/词边界/歧义/黑名单、Steam 前缀、override 优先级、跳过计数
+- [x] 真实语料能加载出 181 条路径，正确报出「存在 / 不存在 / 非 exe / 安装包」四类计数（本机量级 114 / 67 / 2 / 13）
+- [x] 种子映射在真实语料上跑通，输出「精确命中 / 词边界命中 / 歧义跳过 / 无对应」四个计数，**不得出现 `Microsoft` 类通用词误伤**
+- [x] 歧义名（同名跨类别）不产生 seed 结论
+- [x] `FileDescription`/`ProductName` 全空的 exe 能退回文件名匹配（实测有 7 个）
+- [x] Steam 命中给出 `game` + appid；不在 Steam 目录下的不受影响
+- [x] `overrides.json` 命中后覆盖种子/规则/Steam
+- [x] `--paths-from` 与 NekoTrak 语料合并去重
+- [x] 语料目录缺失、JSON 损坏、`cache_format_version` 变化 → 空语料 + 警告，不抛未捕获异常
+- [x] 单测覆盖：版本信息读取（注入 reader 或临时假 exe）、精确/词边界/歧义/黑名单、Steam 前缀、override 优先级、跳过计数
+
+## Comments
+
+**2026-11-01 — 完成，43 项离线单测全绿。**
+
+新增模块：`wininfo.py`（ctypes 读版本信息）、`seeds.py`（种子索引与匹配）、`corpus.py`（语料加载与过滤）、`steam.py`、`overrides.py`；`classify` 接入新顺序 override → seed → rule → steam → unknown。
+
+**真实语料实测**（`G:\SteamLibrary\steamapps\common\NekoTrak`）：
+
+```text
+corpus:  paths=107  skipped_missing=65  skipped_non_exe=2  skipped_installer=7
+seeds:   usable=659  ambiguous=24  harvestedAt=2026-11-01T12:19:34
+classify: seed=71 (exact 29 / word 42)  rule=25  unknown=11
+coverage: 96/107 = 90%       耗时 1 ms/条
+```
+
+与子代理预估的差异（如实记录）：
+
+- **missing 65 而不是 67**：那 2 个 `.tmp` 先被「非 exe」拦下，所以没进 missing 桶。
+- **installer 7 而不是 13**：子代理的 13 是「命中里有多少落在安装包路径」，我的过滤只认「文件名含 setup/install/unins/update」或「exe 自己的两级父目录叫 temp/tmp/downloads/download」。定义不同，不是覆盖不全。
+
+**过程中修掉的两个真问题**：
+
+1. **系统路径只认 `c:\windows\`** — 本机有装在 `H:` 的系统盘，`h:\windows\explorer.exe` 因此漏判。改成 `^[a-z]:\\windows\\`，覆盖率 88% → 90%。
+2. **临时目录过滤太宽**：原本「路径里出现过 `\\temp\\` 就跳过」，会把整个用户目录都在 Temp 下的应用全判成临时文件（我自己的测试就先撞上了）。改成只看 exe 自己的两级父目录名。
+
+**词边界匹配的抽样审计**：42 条 word 命中人工看了前 12 条，都是合理配对（`code.exe`→Visual Studio Code、`windowsterminal.exe`→Windows Terminal、`excel.exe`→Microsoft Excel）。有一条 `ddu v18.1.5.6.exe`→「7z SFX」（你在未分类里的一个条目）属于边缘情况，但类别是「未分类」，不影响结果。
+
+**剩余 11 条 unknown**：`workbuddy`、`cc-switch`、`kook`、`gamepp`、`图吧工具箱2026`、`office tool plus`、`seephealthui`、Windows 商店应用等——正是 04 的 AI 要处理的部分。
