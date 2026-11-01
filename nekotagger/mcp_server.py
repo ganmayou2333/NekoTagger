@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -136,7 +137,77 @@ class Toolset:
             "by_category": stats["by_category"],
         }
 
+    def pending_items(self, limit: int = 50) -> list[dict[str, object]]:
+        """把等着判定的应用交给客户端自己的模型。
+
+        这是「用 agent 当分类器」的入口：客户端读出这份清单，用自己的模型判，
+        再用 :meth:`submit_classifications` 写回。全程不碰外部 API。
+        """
+
+        self._refresh_cache()
+        if self.cache is None:
+            return []
+
+        rows: list[dict[str, object]] = []
+        for path in sorted(self.cache.pending)[: max(1, limit)]:
+            info = read_version_info(path) if os.path.isfile(path) else None
+            rows.append(
+                {
+                    "path": path,
+                    "name": path.rsplit("\\", 1)[-1],
+                    "file_description": (info.file_description or "").strip("\x00") if info else None,
+                    "product_name": (info.product_name or "").strip("\x00") if info else None,
+                    "attempts": self.cache.pending.get(path, {}).get("attempts", 0),
+                }
+            )
+        return rows
+
     # ------------------------------------------------------------------ 写
+
+    def submit_classifications(self, items: list[dict]) -> dict[str, object]:
+        """把调用方（agent）给出的判定写进缓存，来源记为 ``ai``。
+
+        每一项是 ``{path, category, reason?, confidence?}``；类别必须在清单里，
+        否则整条拒绝并在结果里点名。
+        """
+
+        self._refresh_cache()
+        if self.cache is None:
+            raise ToolError("没有可用的缓存")
+
+        accepted: list[dict[str, object]] = []
+        rejected: list[dict[str, object]] = []
+        now = int(time.time())
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            raw_path = item.get("path")
+            category = item.get("category")
+            if not isinstance(raw_path, str) or not isinstance(category, str):
+                continue
+            if category not in self.categories:
+                rejected.append({"path": raw_path, "reason": f"未知类别 {category!r}"})
+                continue
+            normalized = normalize_exe_path(raw_path)
+            reason = str(item.get("reason") or "").strip()[:200]
+            confidence = item.get("confidence")
+            self.cache.put(normalized, {
+                "category": category,
+                "confidence": confidence if confidence in {"certain", "likely", "guess"} else "likely",
+                "source": "ai",
+                "matched_by": f"ai: dsh-agent — {reason}" if reason else "ai: dsh-agent",
+                "classified_at": now,
+            })
+            accepted.append({"path": normalized, "category": category})
+
+        if accepted:
+            self.cache.save()
+        return {
+            "accepted": len(accepted),
+            "rejected": len(rejected),
+            "rejected_items": rejected,
+            "remaining_pending": len(self.cache.pending),
+        }
 
     def override_path(self, path: str, category: str) -> dict[str, object]:
         """写一条人工覆盖。类别必须是清单里已有的 id。"""
@@ -277,7 +348,17 @@ def create_server(*, toolset: Toolset | None = None, allow_write: bool = False):
         """缓存统计：条目数、pending、按来源与按类别的分布。"""
         return tools.cache_stats()
 
+    @server.tool()
+    def pending_items(limit: int = 50) -> list[dict]:
+        """列出等着判定的应用（路径 + 版本信息），供客户端用自己的模型分类。"""
+        return tools.pending_items(limit)
+
     if allow_write:
+
+        @server.tool()
+        def submit_classifications(items: list[dict]) -> dict:
+            """提交 agent 的判定（会写入缓存，source 记为 ai）。类别必须是已有 id。"""
+            return tools.submit_classifications(items)
 
         @server.tool()
         def override_path(path: str, category: str) -> dict:

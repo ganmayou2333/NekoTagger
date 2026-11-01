@@ -106,6 +106,49 @@ class CacheFreshnessTests(ToolsetCase):
         self.assertEqual(self.toolset.classify_path(r"D:\apps\fresh.exe")["source"], "cache")
 
 
+class AgentClassifierTests(ToolsetCase):
+    def _pending(self, path: str) -> None:
+        from nekotagger.normalize import normalize_exe_path
+
+        self.toolset.cache.mark_pending(normalize_exe_path(path), now=1)
+        self.toolset.cache.save()
+
+    def test_pending_items_lists_what_needs_a_decision(self) -> None:
+        self._pending(r"D:\apps\mystery-one.exe")
+        rows = self.toolset.pending_items()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "mystery-one.exe")
+        self.assertIn("attempts", rows[0])
+
+    def test_submit_classifications_writes_ai_entries(self) -> None:
+        exe = self.touch_exe("agent-judged.exe")
+        self._pending(str(exe))
+
+        result = self.toolset.submit_classifications([
+            {"path": str(exe), "category": "dev", "reason": "looks like an editor"},
+        ])
+        self.assertEqual(result["accepted"], 1)
+        self.assertEqual(result["remaining_pending"], 0)
+
+        from nekotagger.normalize import normalize_exe_path
+
+        stored = self.toolset.cache.get(normalize_exe_path(exe))
+        self.assertEqual(stored["source"], "ai")
+        self.assertIn("dsh-agent", stored["matched_by"])
+        self.assertIn("editor", stored["matched_by"])
+
+    def test_submit_rejects_unknown_categories_without_partial_write(self) -> None:
+        good = self.touch_exe("good.exe")
+        bad = self.touch_exe("bad.exe")
+        result = self.toolset.submit_classifications([
+            {"path": str(good), "category": "dev", "reason": "ok"},
+            {"path": str(bad), "category": "invented", "reason": "nope"},
+        ])
+        self.assertEqual(result["accepted"], 1)
+        self.assertEqual(result["rejected"], 1)
+        self.assertEqual(result["rejected_items"][0]["path"], str(bad))
+
+
 class WriteToolsTests(ToolsetCase):
     def test_override_writes_and_takes_effect_immediately(self) -> None:
         exe = self.touch_exe("needs-override.exe")
@@ -161,7 +204,7 @@ class ProtocolSmokeTests(ToolsetCase):
 
         server = create_server(toolset=self.toolset, allow_write=False)
         tools = _tool_names(server)
-        self.assertEqual(set(tools), {"classify_path", "classify_many", "list_categories", "cache_stats"})
+        self.assertEqual(set(tools), {"classify_path", "classify_many", "list_categories", "cache_stats", "pending_items"})
 
     def test_unknown_category_returns_actionable_payload(self) -> None:
         from nekotagger.mcp_server import create_server
@@ -181,6 +224,7 @@ class ProtocolSmokeTests(ToolsetCase):
         tools = _tool_names(server)
         self.assertIn("override_path", tools)
         self.assertIn("export_results", tools)
+        self.assertIn("submit_classifications", tools)
 
 
 def _tool_names(server) -> list[str]:

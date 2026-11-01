@@ -21,3 +21,7 @@ desktop.ini
 
 # 日志
 *.log
+
+# NekoTrak 抓取与建议（本地数据）
+data/uncategorized*.json
+data/uncategorized-groups.txt

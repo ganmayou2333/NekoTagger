@@ -119,7 +119,7 @@ class McpStdioTests(unittest.TestCase):
         client = self._client()
         self.assertEqual(
             set(client.tool_names()),
-            {"classify_path", "classify_many", "list_categories", "cache_stats"},
+            {"classify_path", "classify_many", "list_categories", "cache_stats", "pending_items"},
         )
 
     def test_classify_over_protocol(self) -> None:
