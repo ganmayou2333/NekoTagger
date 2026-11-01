@@ -83,6 +83,18 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(result["source"], "rule")
         self.assertIn("path: contains 'huorong'", result["matched_by"])
 
+    def test_short_pattern_only_matches_the_file_name(self) -> None:
+        # "qq" is a short pattern (comm): a directory called qq must not pull an
+        # unrelated executable into 通讯.
+        result = classify(r"e:\qq\unrelated-tool.exe", categories=CATEGORIES, now=0)
+        self.assertNotEqual(result["category"], "comm")
+        self.assertEqual(result["source"], "unknown")
+
+    def test_generic_path_token_never_matches_by_path(self) -> None:
+        # A directory named "microsoft" is not evidence for any category.
+        result = classify(r"c:\microsoft\weird.exe", categories=CATEGORIES, now=0)
+        self.assertEqual(result["source"], "unknown")
+
     def test_unknown_falls_back_to_uncategorized(self) -> None:
         result = classify(r"D:\some\strange\thing.exe", categories=CATEGORIES, now=0)
         self.assertEqual(result["category"], "uncategorized")

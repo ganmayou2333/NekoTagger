@@ -16,6 +16,16 @@ DEFAULT_CATEGORIES_PATH = Path(__file__).resolve().parent.parent / "categories.j
 
 REQUIRED_FALLBACK_ID = "uncategorized"
 
+#: patterns 短于这个长度只允许匹配文件名。像 ``qq`` / ``7z`` / ``gh`` 这种短词
+#: 一旦允许匹配完整路径，会在目录名上大量误伤。
+MIN_PATH_PATTERN_LENGTH = 4
+
+#: 这些词在任何路径里都太常见，不允许靠"出现在路径里"命中类别。
+GENERIC_PATH_TOKENS = frozenset(
+    {"microsoft", "windows", "x64", "app", "apps", "setup", "install", "application",
+     "desktop", "download", "downloads", "program", "programs", "temp", "users"}
+)
+
 
 class CategoryConfigError(ValueError):
     """类别清单缺失或非法。"""
@@ -82,6 +92,10 @@ class CategorySet:
                     continue
                 if needle in basename:
                     return category, pattern, "name"
+                # 短词与通用词只认文件名，避免 ``e:\qq\...``、``...\microsoft\...``
+                # 这类目录名造成的批量误判。
+                if len(needle) < MIN_PATH_PATTERN_LENGTH or needle in GENERIC_PATH_TOKENS:
+                    continue
                 if needle in lowered:
                     return category, pattern, "path"
         return None

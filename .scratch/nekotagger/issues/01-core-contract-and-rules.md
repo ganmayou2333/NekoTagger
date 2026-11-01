@@ -34,3 +34,12 @@ D:\some\strange\thing.exe           uncategorized  unknown/guess  no rule matche
 **跑真实语料发现一个规则缺陷并修掉**：原先 patterns 只匹配**文件名**，导致 `e:\huorong\sysdiag\bin\hipsmain.exe`（目录名才是唯一线索）被判成 unknown。spec 写的是「进程名**或路径**关键词」，现在同时匹配完整规范路径，`matched_by` 里区分 `name:` / `path:`。这一条改完，真实语料（NekoTrak `caches/app-icons` 的 181 条 exe）的规则命中率从 **73/181（40%）** 提到 **104/181（57%）**。
 
 顺带纠正一个之前写错的事实：`caches/` 不在 `%APPDATA%\NekoTrak` 下，而在**安装目录**（本机 `G:\SteamLibrary\steamapps\common\NekoTrak\caches`）。02 的票面已改。
+
+**2026-11-01 — grilling 之后的补丁（patterns 收紧）。**
+
+实测发现规则层的裸子串 + 全路径匹配有同类误伤风险，按确认后的决策改成：
+
+- pattern 长度 **≥4** 才允许匹配完整路径；短 pattern（`qq` / `7z` / `gh` / `code`）只匹配文件名。
+- 通用词黑名单（`microsoft` / `windows` / `x64` / `app` / `setup` / `application` / `desktop` / `download` / `temp` / `users` …）不允许靠「出现在路径里」命中。
+
+新增两条回归测试：`e:\qq\unrelated-tool.exe` 不得被判成「通讯」；`c:\microsoft\weird.exe` 不得被判成任何类别。24 项单测全绿。

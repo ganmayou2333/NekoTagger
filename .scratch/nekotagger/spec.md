@@ -1,211 +1,205 @@
 # Spec: 应用分类器（NekoTagger）
 
-状态：草案（2026-11-01）。三个决策已定（见文末「决策记录」），类别清单已从 NekoTrak 实测抄录，下一步拆票。
+状态：设计定稿（2026-11-01，经 grilling 确认）。决策见文末「决策记录」，实现见 `issues/`。
 日期：2026-11-01
-关联：`StatusCast`（前台进程来源）、`NekoTool`（消费侧候选）、`docs/NekoTrak接入实施计划.md`（同一台机器上的 NekoTrak 集成）
 
 ## 背景
 
-NekoTrak 自己会把应用归类（界面里的「分类 / 应用」页），但那份数据**读不出来**：
+NekoTrak 自己会把应用归类（界面里的「分类 / 应用」页），但那套数据**读不出来**：
 
-- `%APPDATA%\NekoTrak` 下所有 `.db`（含 `backups/`、`users/<id>/cloud*/`）都没有 SQLite 魔数，是加密的；
+- `%APPDATA%\NekoTrak` 下所有 `.db`（含 `backups/`、`users/<id>/cloud*/`）都没有 SQLite 魔数，是加密的（SQLCipher；DB 与 WAL 熵均为 8.00）；
 - `users/<id>/tracker-heartbeat.json` 是 `NKSC` 密文；
-- 两处明文 `config.json` 里只有 `systemCategorySettings`（`idleColor` / `uncategorizedColor` / 两个 `hidden` 开关），**没有类别列表，也没有应用→类别的映射**；
-- `NekoTrak.log` 里也没有分类相关记录。
+- 两处明文 `config.json` 里只有 `systemCategorySettings`（颜色/隐藏开关），**没有类别列表，也没有应用→类别的映射**；
+- 二进制静态分析：无 `crypt32`（不走 DPAPI）、advapi32 无 `CredReadW`（不走凭据管理器）、注册表与明文文件里都没有密钥块。**要解密只能运行时插桩或提取密钥，已决定不做。**
 
-所以要「按 NekoTrak 的分类体系归类」，只能自己重建这套分类，而不是去读它。
+所以「按 NekoTrak 的分类体系归类」只能自己重建这套分类。
 
-同时有三份**明文**语料可以直接用（本机实测）：
+### 可用的明文输入（本机实测，2026-11-01）
 
-| 来源 | 内容 | 规模 |
+| 来源 | 内容 | 实测规模 |
 | --- | --- | --- |
-| `NekoTrak\caches\app-icons\*.json` | 每个应用一份，含 `normalized_exe_path`、图标索引 | 180 份 / 141 个不同 exe 名 |
-| `NekoTrak\caches\steam-library-index.json` | Steam 库索引：`appid`、`name`、`installDir`、`manifestPath` | 3 个库 |
-| StatusCast 的 NekoTrak 采集器 | 实时前台进程（`foregroundApp` = exe 名，`currentGameAppId`） | 每 30 秒 |
+| NekoTrak 安装目录 `caches\app-icons\*.json` | 每个应用一份，含 `normalized_exe_path` | 181 条 exe 路径，其中 **114 条文件仍存在（63%）** |
+| 同目录 `caches\steam-library-index.json` | Steam 库索引：`appid` / `name` / `installDir` | 23 个 app / 3 个库 |
+| 分类页 UI Automation 抓取（一次性） | 8 个类别 + 条目显示名 | **740 条，去重 716** |
+| StatusCast 的 NekoTrak 采集器 | 实时前台进程 | 每 30 秒 |
 
-`caches/app-icons/` 这份是最有价值的：它等于「这台机器上跑过的应用清单」，可以直接当冷启动语料和测试夹具。
+### 抓过来的种子长什么样（这决定了匹配策略）
+
+- 740 条里 **24 条重复**（跨类别重名），去重后 716。
+- 用版本信息（`FileDescription` / `ProductName`）把 716 个显示名映射到 114 个存在的 exe：**只有 252 个名字（35%）能被用掉**，464 个没有对应 exe。
+- exe 一侧反过来很乐观：存在的 114 条里 113 条能映射（99%）。
+- 但**裸子串匹配会误伤**：种子 `Microsoft` 一个词命中 39 个 exe；`app` / `windows` / `x64` / `setup` / `application` / `desktop` / `download` 各命中 7–29 个纯属目录名巧合。
+- 版本信息质量：`FileDescription` 空 7.9%；`ProductName` 为通用串「Microsoft® Windows® Operating System」占 22.8%；中文 Windows 的 FD 本地化良好（`openwith.exe` → 选取应用）。
+- 缓存里的 13 个命中是**安装包/临时文件**（`\idm\`、`\temp\`、`\download\`、`*setup*`），不是运行中的主程序。
 
 ## 目标
 
-一个**独立的小工具**（不进 StatusCast / NekoTool 两个仓库），给定一个可执行文件路径或前台进程，输出它属于哪个类别，并把这个判断持久化：
+一个**独立的小工具**：给定 exe 路径，输出它属于哪个类别并持久化判断。
 
-- 规则优先，AI 兜底：常见应用靠本地规则秒判；规则判不出来的才问模型，**判一次就写进缓存，同一个应用不再问第二次**。
-- 冷启动可批量：拿 `caches/app-icons/` 那 180 条跑一遍，把未知项合并成**一次**模型调用，而不是 180 次。
-- 运行时可单条：前台进程查缓存命中就返回，未命中才走 AI，并带超时与降级。
-- 结果可复现：同一个 exe 路径任何时候都得到同一个类别，除非显式 `--reclassify`。
-- 全程离线可测：测试只用合成夹具 + 假模型，不联网。
+- 规则与种子优先，AI 兜底；**同一个应用最多问一次模型**。
+- 冷启动可批量，未知项合并请求；运行时可单条（可选走 AI）。
+- 同一路径任何时候都得到同一类别，除非显式重判。
+- 全程离线可测（合成夹具 + 假模型）。
 
 ## 非目标
 
-- **不读、不写 NekoTrak 的数据库与配置**，不注入它的进程，不读它的界面。分类体系是我们自己维护的一份，只是「名字对齐」它界面上的那一套。
-- 不做进程实时监控/常驻服务（`--watch` 是后续可选项，见开放问题）。
-- 不做使用时长统计/报表（那是另一个议题；本工具只回答「这个应用属于哪类」）。
-- 不做模型训练/微调。
-- 不引入需要 GPU 或大体积运行时的依赖。
+- 不读、不写 NekoTrak 的数据库与配置；不注入进程；**不把「读它的界面」变成常规能力**（种子只手动重抓）。
+- 不做常驻监控 / 使用时长统计 / 报表。
+- 不写进 StatusCast 的 schema，不接 NekoTool（输出是 JSON，谁要谁读）。
+- 不训练/微调模型；不引入 GPU 或重运行时依赖。
 
 ## 设计
 
 ### 1. 分类契约（核心）
 
-一个函数，一个返回结构——这是整个工具的**深模块边界**，其它一切都是它的输入输出：
-
 ```text
-classify(exe_path | running_process) -> {
-  category:     <类别 id，见 §2>,
-  confidence:   "certain" | "likely" | "guess",
-  source:       "override" | "rule" | "cache" | "ai" | "unknown",
-  matched_by:   <一句话说明命中原因，便于调试>,
+classify(exe_path) -> {
+  category:      <类别 id>,
+  confidence:    "certain" | "likely" | "guess",
+  source:        "override" | "seed" | "rule" | "steam" | "cache" | "ai" | "unknown",
+  matched_by:    <一句话命中原因，便于抽查>,
   classified_at: <epoch 秒>
 }
 ```
 
-语义：
+判定顺序（前一条命中即返回）：
 
-- `override`：用户显式指定（人工兜底，永远最高优先级）。
-- `rule`：本地规则命中（路径/进程名/Steam 库）。
-- `cache`：之前算过，直接复用（**不再调模型**）。
-- `ai`：模型判的，已写缓存。
-- `unknown`：都没有，返回「未分类」并在缓存里标记 `pending`，等下次批量或单条再试（**不要每次都重试同一批**，防止刷接口）。
+1. **override**：`overrides.json`，人工指定，**最高优先级，永不被覆盖**。
+2. **seed（精确）**：种子名与 exe 的版本信息/文件名**精确或词边界**匹配，且该名字**只属于一个类别**。
+3. **rule**：系统路径 / 安装器 → `tool`；`categories.json` 的 patterns。
+4. **steam**：路径落在某个 Steam `installDir` 下 → `game`，附 `appid`。
+5. **cache**：之前判过（含 AI 结果）。
+6. **ai**：显式允许时问模型。
+7. **unknown**：兜底 `uncategorized` + `confidence:"guess"`，进 `pending`。
 
-### 2. 类别（已从 NekoTrak 实测抄录）
+> 顺序说明：cache 放在种子/规则之后，是因为规则与种子是**确定性**的，重算成本为零；cache 只是省一次 AI，不该挡住确定性判断。
 
-2026-11-01 用 UI Automation 读了一次 NekoTrak 的「分类」页（只切换页签读取，未修改任何数据，读完切回仪表盘）。实际清单：
+### 2. 类别
 
-| emoji | 类别 | 当时条目数 |
-| --- | --- | --- |
-| 🎮 | 游戏 | 14 |
-| 💻 | 开发 | 10 |
-| 📊 | 办公 | 2 |
-| 🌐 | 浏览 | 232 |
-| 💬 | 通讯 | 1 |
-| 🔧 | 工具 | 6 |
-| ✨ | 娱乐 | —（页面上未显示计数） |
-| 🗂️ | 未分类 | 549 |
+从 NekoTrak 分类页实测抄录，落成 `categories.json`（仓库根）：`id` 稳定 slug、`label` 中文名、`emoji`、`patterns`、`notes`。
 
-页面上还有「新建分类 / 分类工作区 / 条目 / 规则 / 高级筛选」，说明**类别是用户可自定义的**。所以：
+| emoji | id | 名称 | 当时条目数 |
+| --- | --- | --- | --- |
+| 🎮 | game | 游戏 | 14 |
+| 💻 | dev | 开发 | 10 |
+| 📊 | office | 办公 | 2 |
+| 🌐 | browse | 浏览 | 232 |
+| 💬 | comm | 通讯 | 1 |
+| 🔧 | tool | 工具 | 6 |
+| ✨ | entertainment | 娱乐 | — |
+| 🗂️ | uncategorized | 未分类 | 549 |
 
-- 类别不硬编码在代码里，落成 `categories.json`，字段：`id`（稳定 slug，如 `game`）、`label`（中文名，如 `游戏`）、`emoji`、`patterns`（进程名/路径关键词）、`notes`（判断依据）。
-- 上面 8 个作为**初始默认值**（`uncategorized` 是兜底，等于「未分类」）。
-- 用户改了 NekoTrak 的类别之后，我们这份需要手动同步（保持 id 稳定，只改 label/patterns）；**不做自动同步**，因为读它要点 UI，不适合放进常规流程。
-- 未命中的一律落 `uncategorized`。
+类别是用户可自定义的（界面有「新建分类」），所以**不硬编码**；改清单后按 §5 处理缓存。
 
-### 2.5 种子数据（已抓取，2026-11-01）
+### 3. 种子（`data/seed-categories.json`）
 
-分类器不要求 AI 从零猜：已经通过 **UI Automation 只读抓取**拿到 NekoTrak「分类」页的 8 个类别与条目清单，落在 `data/seed-categories.json`（740 条，已做跨类目去噪）：
+**匹配策略（放弃裸子串）**
 
-| 类别 | 条目数 | 备注 |
-| --- | --- | --- |
-| 游戏 | 13 | EVE / 米哈游启动器 / 三角洲行动 / Apex… |
-| 开发 | 9 | ChatGPT / Cherry Studio / DeepSeek / GitHub / VS… |
-| 办公 | 2 | iCloud / Microsoft Access |
-| 浏览 | 211 | 含大量网页标题（这一类本来就是浏览器窗口） |
-| 通讯 | 1 | QQ |
-| 工具 | 6 | 123云盘 / 火绒系列 / IDM… |
-| 娱乐 | 2 | 哔哩哔哩 / 网易云音乐 |
-| 未分类 | 496 | 用户尚未分类的应用名 |
+- 规范化：NFKC → 小写 → 去首尾空白 → 去尾部 1–2 层括号 → 去尾部版本号。
+- **精确**：规范化后完全相等 → 可落 `source:"seed"`。
+- **词边界**：按非字母数字切词后整词相等（能救 `OBS Studio` vs `obs64` 的一部分）→ 同样可落 seed。
+- **歧义**：同一显示名出现在多个类别 → **视为歧义，不落 seed**，只作为提示词候选。
+- **黑名单**：`microsoft` / `windows` / `x64` / `app` / `setup` / `application` / `desktop` / `download` 等通用词永不参与匹配（实测 `Microsoft` 会命中 39 个 exe）。
+- 只对**存在的文件**做映射；`FileDescription` / `ProductName` 为空时退回文件名与父目录名（实测 7 个这样的 exe 全部靠文件名救回）。
 
-用法：这些是**应用显示名**，不是 exe 路径。ticket 02 负责把名字映射到可执行文件（exe 的 VersionInfo.FileDescription、Steam 库索引名、人工 override），映射成功的那部分直接以 `source:"seed"` 写进缓存——**权威数据优先于模型**。
+**权威边界**：只有精确/词边界命中才写 `source:"seed"`；模糊相似只作为 AI 提示词上下文，**不写缓存终态**。
 
-已知局限：
+**新鲜度**：`_meta.harvestedAt` 超过 30 天时，`corpus` / `show` 打一次警告；重新抓取由用户手动执行（不内置 UI 自动化）。
 
-- 「浏览」里的条目多是网页标题而不是应用名，做进程映射时应整类跳过或只保留能对上 exe 的。
-- 类别清单是你自定义的，改动后需要重新抓一次（`data/seed-categories.json` 的 `_meta.harvestedAt` 记录时间）。
+### 4. 规则层（`categories.json` 的 patterns）
 
-### 2.6 为什么不去读 NekoTrak 的数据库（已决策：不做）
+- patterns 同时参与「文件名」与「完整路径」匹配，但**长度 ≥4 才允许匹配路径**；短 pattern（`qq` / `7z` / `gh` / `code`）只匹配文件名——否则会在目录名上误伤。
+- 系统路径（`c:\windows\*`）与安装器/卸载器（`setup.exe` / `*install*` / `unins*`）→ `tool`（NekoTrak 没有「系统」类）。
+- 规则层是纯函数：不读写文件、不联网。
 
-DB 是 SQLCipher 加密的（`NekoTrak.db` 与 `-wal` 熵均为 8.00，无 SQLite 魔数），静态分析确认：
+### 5. 缓存（`cache.json`）
 
-- 没有 `crypt32.dll` 导入 → 不走 DPAPI
-- advapi32 没有 `CredReadW`/`CredWriteW` → 不走 Windows 凭据管理器（`CredEnumerate` 实测也返回零条）
-- 注册表只有 Steam 的 app 注册项；`config.json` / `local.json` / `manifest.json` 里没有密钥块
-- `libcrypto-4-x64.dll` 提供 PBKDF2 / AES-256-CBC，可能是 cloud-snapshot 用的
+- 位置：`%LOCALAPPDATA%\NekoTagger\cache.json`，可用 `--cache` 覆盖。**不再放仓库根**（缓存是这台机器的运行状态，不该跟着 clone 走）。
+- 结构：`{version, entries:{<规范化路径>:{category,confidence,source,matched_by,classified_at}}, pending:{<path>:{attempts,lastAttemptAt}}}`。
+- 键：规范化路径（小写、反斜杠、去引号与尾空格）。**不做 basename 兜底**——同名不同程序会判错，而重判一次的成本只是一次 AI 调用。
+- **清单变更**：加载时发现条目里的 category id 不在当前清单 → 该条标记 `pending` 重判 + 警告；其余条目不动。
+- `pending` 重试上限 3 次，超过后留 `uncategorized` 且不再重试。
+- 原子写（同目录临时文件 + `File.Replace` 语义），损坏或版本不识 → 降级为空缓存 + 警告。
 
-passphrase 来源未定位，继续需要运行时插桩或长时间静态反编译。**用户已决定不走这条路**：分类器用界面抓来的种子即可，不碰加密存储、不提取密钥。
+### 6. AI（OpenAI 兼容 HTTP）
 
-### 3. 规则层（顺序即优先级）
+- 配置：`%LOCALAPPDATA%\NekoTagger\config.local.json`（`base_url` / `model` / `api_key`），环境变量 `NEKOTAGGER_API_KEY` 等优先覆盖。
+- 批量：默认 20 条/批；**不重试**，失败整批进 `pending`，下一轮再说。
+- 上限：默认不限，`--max-batches N` 手动兜底。
+- 返回要求：每项 `{path, category, confidence, reason}`；**类别必须命中清单枚举**，否则整条丢弃进 `pending`。
+- `reason`（一句短理由）存进 `matched_by`，供抽查。
+- 提示词：只放路径与进程名（不放窗口标题/用户名）；种子参考按 §3 规则挑 **≤20 条相似名**，挑不到就给「每类 2–3 个代表」。
 
-1. **用户覆盖**：`overrides.json`，`{ "<normalized exe path>": "<category id>" }`，人工可编辑，永不被 AI 覆盖。
-2. **系统路径**：`c:\windows\*`、驱动/安装器（`setup.exe`、`*install*.exe`、`unins*`）→ **`tool`（工具）**。注意 NekoTrak 的类别里**没有「系统」这一类**（实测只有 游戏/开发/办公/浏览/通讯/工具/娱乐/未分类），所以系统路径归到「工具」，不另造类别。这类占样本量不小（本机 180 条里就有 `openwith.exe`、`wdi-simple.exe`、`setup.exe`）。
-3. **Steam 库命中**：能对上 `steam-library-index.json` 的 `installDir` → 先判为 `game`，同时记录 `appid`，供后续细分（比如按 appid 白名单把「游戏」细分成 单机/联机，属开放问题）。
-4. **进程名/路径关键词**：浏览器（`msedge`/`chrome`/`firefox`）、IDE（`code`/`devenv`/`pycharm`）、终端（`windowsterminal`/`powershell`）、办公（`winword`/`excel`）等，来自 `categories.json` 里每个类别自带的 `patterns`。
-5. **AI 兜底**：以上都没命中，且缓存没有终态结果 → 问模型。
+### 7. 语料（`corpus`）
 
-规则层必须**纯函数、可单测**，不碰网络、不碰文件（由调用方注入语料）。
+- 来源：NekoTrak `caches/app-icons/*.json` + 可选 `--paths-from <file>`（每行一个路径），合并去重。
+- 过滤：文件不存在 → 跳过并计数（实测 67/181 已失效）；非 `.exe`（如 `.tmp`）→ 跳过；安装包/临时路径（`\temp\`、`\download\`、`*setup*`、`unins`）→ 跳过并计数。
+- 输出：一个可复现的语料清单（路径 + 跳过原因统计），供后续判定。
 
-### 4. 缓存
-
-`cache.json`（版本化，原子写，同 `write_to_obs.ps1` 的做法）：
-
-```json
-{
-  "version": 1,
-  "entries": {
-    "e:\\doubao\\app\\doubao.exe": {
-      "category": "ai-assistant",
-      "confidence": "likely",
-      "source": "ai",
-      "matched_by": "model: 豆包桌面客户端",
-      "classified_at": 1793500000
-    },
-    "c:\\windows\\system32\\openwith.exe": {
-      "category": "system",
-      "confidence": "certain",
-      "source": "rule",
-      "matched_by": "path: c:\\windows\\*",
-      "classified_at": 1793500001
-    }
-  },
-  "pending": ["d:\\some\\unknown.exe"]
-}
-```
-
-- 路径键统一规范化（小写 + 反斜杠 + 去引号 + 去尾随空格），与 NekoTrak `normalized_exe_path` 一致。
-- `pending` 记录「问过 AI 但没给出可用结果」的项，带重试上限（默认 3 次），超过就留 `uncategorized` 不再重试。
-- 缓存里不存模型原始回复（避免体积和隐私问题），只存结论与一句理由。
-
-### 5. AI 调用
-
-- **批量优先**：冷启动把待判项按每批 N 个（默认 20）打包成一次请求，要求模型对每一项只回 `{path, category, confidence}`。
-- 输出必须校验：类别必须在 §2 的枚举里，不在枚举里的整条丢弃并计入 `pending`，**不允许模型发明类别**。
-- 超时/失败：该批全部进 `pending`，本轮不阻塞其它批次。
-- 提示词里只放**路径和进程名**，不放窗口标题（窗口标题可能含文档名、网址，属隐私），除非后续明确要。
-- 后端：**OpenAI 兼容的 HTTP 接口**（`base_url` / `model` / `api_key` 走本地配置文件，不进仓库）。只用 stdlib `urllib`，不引新依赖。
-
-### 6. CLI 形态（最小集）
+### 8. CLI
 
 ```text
-nekotagger classify <exe-path>          # 单条，命中缓存则 0 次网络
-nekotagger corpus                       # 用 NekoTrak app-icons 语料批量冷启动
-nekotagger show                         # 打印缓存统计（各类多少、多少 pending）
-nekotagger override <exe-path> <cat>    # 写 overrides.json
-nekotagger --json                       # 机器可读输出
+nekotagger classify <path> [--json] [--ai] [--cache P] [--categories P] [--config P]
+nekotagger corpus [--paths-from F] [--max-batches N] [--cache P]
+nekotagger show [--cache P]
+nekotagger override <path> <category> [--overrides P]
+nekotagger export --out F [--source S] [--cache P]
 ```
+
+- 安装：`pyproject.toml` 暴露 `nekotagger` 命令（不发布 PyPI）。
+- `export` 只存类别 id，不存 label/emoji（展示查 `categories.json`）。
+- `overrides.json` **入库**（判断沉淀）；`cache.json` / `config.local.json` 不入库。
+
+### 9. 完成判据
+
+- 存在文件的语料里 **≥95%** 有终态类别；
+- `source:"ai"` 占比 **≤30%**；
+- `show` / `export` / `override` / `corpus` 均可用；
+- 全离线测试覆盖：规则、种子匹配、Steam、缓存失效、批量 AI（假后端）、提示词隐私。
 
 ## 测试（全离线）
 
-- 规则层：纯函数，用合成路径表驱动（`c:\windows\...`、Steam 装目录、浏览器、IDE、未知）。
-- 类别校验：模型返回非法类别 → 丢弃 + 进 pending；返回合法但低置信 → 接受并标 `guess`。
-- 缓存：命中不调模型（用假模型计数断言 **0 次调用**）；`pending` 重试上限生效；原子写不产生半截文件。
-- 冷启动：180 条合成语料，只对未知项发 **1 次**批量请求（断言调用次数，不是断言内容）。
-- 隐私：提示词构造里不含窗口标题/用户名（断言字符串）。
+- 规则层：纯函数表驱动（系统路径、安装器、长/短 pattern、未知）。
+- 种子：精确、词边界、歧义、黑名单、版本信息缺失时退回文件名。
+- 语料：缺失文件/安装包/非 exe 的跳过计数；`--paths-from` 合并去重。
+- 缓存：命中零 AI 调用；pending 上限；清单变更选择性失效；原子写；损坏降级。
+- AI：批量次数断言、非法类别丢弃、超时降级、提示词不含窗口标题。
 
-## C0 / 真机边界
+## 决策记录（2026-11-01 grilling）
 
-- 真实 AI 后端的分类质量无法离线验证，只能抽样人工核对；spec 只保证**契约与降级**正确，不保证分得准。
-- 本机 180 条语料可以作为验收样本，但它是「这台机器」的分布，不代表通用。
-
-## 决策记录（2026-11-01）
-
-| 问题 | 决定 |
+| # | 决策 |
 | --- | --- |
-| 类别清单来源 | **UI Automation 读一次 NekoTrak 的「分类」页**（已执行，见 §2）；之后手动维护 `categories.json` |
-| AI 后端 | **OpenAI 兼容 HTTP 接口**，stdlib `urllib`，key 放本地配置 |
-| 输出去向 | **只落一个 JSON 文件**，不写进 StatusCast schema，不接 NekoTool |
-| 工具形态 | 独立小工具 / 新仓库，不进现有两仓 |
+| 1 | 范围：NekoTagger 剩余 4 张票的设计（不含 StatusCast/NekoTool） |
+| 2 | seed 权威：AI 不得覆盖；只有 overrides 能改 |
+| 3 | 未映射的种子名：不丢，按相似度进 AI 提示词 |
+| 4 | AI 触发：`corpus` 批量冷启动 + `classify --ai` 单条可选 |
+| 5 | 输出：只有 `cache.json` 是真相，`export` 另开命令 |
+| 6 | 清单变更：只失效受影响条目 |
+| 7 | 提示词：相似度挑 ≤20 条 + 每类代表兜底 |
+| 8 | 配置：`config.local.json` + 环境变量覆盖 |
+| 9 | 文件位置：缓存与配置放 `%LOCALAPPDATA%\NekoTagger\` |
+| 10 | `overrides.json` 入库 |
+| 11 | 导出字段：只存类别 id |
+| 12 | 打包：`pyproject.toml` + `nekotagger` 命令 |
+| 13 | 路径变化：接受重判，不做 basename 兜底 |
+| 14 | AI 失败：不重试，进 pending |
+| 15 | 批量上限：默认不限，`--max-batches` 兜底 |
+| 16 | `show` 口径：source + 类别 + pending，ai 单列 |
+| 17 | 子串匹配：放弃裸子串，改精确 + 词边界 + 黑名单 |
+| 18 | 权威边界：只有精确/词边界命中算 seed |
+| 19 | 失效路径：跳过并计数 |
+| 20 | 同名跨类别：视为歧义，不落 seed |
+| 21 | 种子过期：30 天警告，不自动抓取 |
+| 22 | 语料入口：支持 `--paths-from` |
+| 23 | 安装包/临时路径：跳过并计数 |
+| 24 | AI 条目：`show` 单列 + `export --source ai` |
+| 25 | patterns：长度 ≥4 才匹配路径，短词只匹配文件名 |
+| 26 | AI 返回带一句短理由，存进 `matched_by` |
+| 27 | 完成判据：≥95% 终态、AI ≤30%、命令齐全、测试全离线 |
 
 ## 风险
 
-- **类别语义漂移**：模型对「工作 / 学习」这类边界模糊的类别不稳定 → 靠固定枚举 + 置信度 + 人工 override 兜底。
-- **路径不可比**：同一应用不同安装位置 / 版本号在路径里 → 规范化要处理，且规则按「进程名」而非全路径优先匹配。
-- **冷启动耗时**：180 条 × 批量 = 若干次调用；用 `pending` + 增量避免每次全量重跑。
-- **NekoTrak 升级**：`caches/app-icons/` 的 `cache_format_version` 目前是 1，格式变了要能识别并降级（读不到就当空语料，不崩）。
+- **类别语义漂移**：模型对「工作 / 学习」边界不稳 → 固定枚举 + 置信度 + override 兜底。
+- **种子只覆盖 35%**：名字远多于 exe（716 vs 114）→ 剩下的靠规则与 AI，别指望种子包打天下。
+- **版本信息不可靠**：FD 空 7.9%、通用 ProductName 22.8% → 匹配必须有黑名单与词边界，否则批量误判。
+- **NekoTrak 升级**：`cache_format_version` 变化 → 读不到就当空语料，不崩。
