@@ -143,6 +143,17 @@ class ProtocolSmokeTests(ToolsetCase):
         tools = _tool_names(server)
         self.assertEqual(set(tools), {"classify_path", "classify_many", "list_categories", "cache_stats"})
 
+    def test_unknown_category_returns_actionable_payload(self) -> None:
+        from nekotagger.mcp_server import create_server
+
+        server = create_server(toolset=self.toolset, allow_write=True)
+        manager = getattr(server, "_tool_manager", None)
+        tools = getattr(manager, "_tools", {}) if manager is not None else {}
+        override = tools["override_path"]
+        result = override.fn("D:\\apps\\x.exe", "no-such-category")
+        self.assertFalse(result["ok"])
+        self.assertIn("game", result["valid_categories"])
+
     def test_server_exposes_write_tools_when_allowed(self) -> None:
         from nekotagger.mcp_server import create_server
 

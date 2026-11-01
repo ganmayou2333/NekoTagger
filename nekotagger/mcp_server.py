@@ -244,12 +244,24 @@ def create_server(*, toolset: Toolset | None = None, allow_write: bool = False):
         @server.tool()
         def override_path(path: str, category: str) -> dict:
             """写一条人工覆盖（会修改 overrides.json）。类别必须是已有 id。"""
-            return tools.override_path(path, category)
+            # 客户端通常只显示 "Error executing tool"，所以把可执行的提示
+            # （合法类别列表）放进返回体，而不是靠异常文本。
+            try:
+                return tools.override_path(path, category)
+            except ToolError as exc:
+                return {
+                    "ok": False,
+                    "error": str(exc),
+                    "valid_categories": list(tools.categories.ids()),
+                }
 
         @server.tool()
         def export_results(out: str, source: str | None = None) -> dict:
             """把缓存导出成 JSON（只含类别 id）；source 可限定为 ai 等。"""
-            return tools.export_results(out, source)
+            try:
+                return tools.export_results(out, source)
+            except ToolError as exc:
+                return {"ok": False, "error": str(exc)}
 
     return server
 
