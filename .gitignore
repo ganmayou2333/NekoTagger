@@ -1,6 +1,7 @@
 # 分类结果与缓存是本机产物，不入库
 cache.json
 classifications.json
+data/classifications*.json
 
 # 本地配置（含 API key）
 config.local.json

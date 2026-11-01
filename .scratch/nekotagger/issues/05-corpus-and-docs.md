@@ -72,3 +72,24 @@ $ nekotagger-mcp   （stdio，initialize 握手正常返回）
 ```
 
 所以票面那条 AC 从「未验证」改回已完成；README 里关于 `pip install -e .` 需要 setuptools 的提示保留（换机器仍可能踩到）。
+
+**2026-11-01 补记（判据达成）**：本机没有可用的 API key，所以「AI 判过的 16 条」是**由 agent 直接判的**（读版本信息与安装目录），缓存里标 `source:"ai"`、`matched_by` 写成 `ai: agent-inferred — <理由>`，出处不含糊。
+
+最终一次完整跑：
+
+```text
+语料 109 条 → 全部有终态类别（100%）
+  seed=66  rule=27  ai=16
+类别：uncategorized=57  tool=34  browse=5  dev=5  game=4  comm=2  entertainment=1  office=1
+pending=0
+AI 占比 16/109 = 14.7%（上限 30%）
+```
+
+| 判据 | 结果 |
+| --- | --- |
+| ≥95% 有终态类别 | ✅ 100% |
+| `source:"ai"` ≤30% | ✅ 14.7% |
+| 命令齐全 | ✅ |
+| 全离线测试 | ✅ 86 项 |
+
+已知遗留：`sysdiag-all-x64-*.exe` 与 `uuyc_4.42.0.exe` 其实是**安装包**，因为名字里没有 setup/install 而漏过了语料过滤，被当成普通应用判成了「工具」。修法应是「按 FileDescription 或下载目录判定安装包」，留作后续。
