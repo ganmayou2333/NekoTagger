@@ -260,7 +260,14 @@ def load_seeds(path: str | Path, categories: CategorySet) -> SeedIndex:
 
     entries: list[SeedName] = []
     ambiguous: set[str] = set()
+    skipped_uncategorized = 0
     for name, category_ids in by_name.items():
+        # 种子里的「未分类」不携带任何信息：用它只能证明「它没被分类」，
+        # 拿它当结论是循环论证，还会挡住后面本该由规则/AI 给出的判断。
+        category_ids = {cid for cid in category_ids if cid != "uncategorized"}
+        if not category_ids:
+            skipped_uncategorized += 1
+            continue
         normalized = normalize_display_name(name)
         if not normalized:
             continue

@@ -70,7 +70,7 @@ class SeedLoadingTests(TempDirCase):
         path = self.seed_file({
             "开发": ["Cursor"],
             "工具": ["Cursor"],
-            "未分类": ["QQ"],
+            "通讯": ["QQ"],
         })
         index = load_seeds(path, CATEGORIES)
         self.assertIn(normalize_display_name("Cursor"), index.ambiguous)
@@ -91,7 +91,7 @@ class SeedLoadingTests(TempDirCase):
 
     def test_cjk_seed_is_exact_only(self) -> None:
         # 「INF 默认安装」切词后只剩 ("inf",)，不许靠它去撞路径里的 inf。
-        path = self.seed_file({"未分类": ["INF 默认安装"]})
+        path = self.seed_file({"工具": ["INF 默认安装"]})
         index = load_seeds(path, CATEGORIES)
         self.assertIsNone(index.match("oem1.inf_amd64"))
         self.assertIsNotNone(index.match("INF 默认安装"))
@@ -103,6 +103,13 @@ class SeedLoadingTests(TempDirCase):
         self.assertIsNone(index.match("some-inf-file"))
         self.assertIsNotNone(index.match("INF"))
         self.assertIsNotNone(index.match("Visual Studio Code 64"))
+
+    def test_uncategorized_seed_is_not_a_conclusion(self) -> None:
+        # 种子里的「未分类」等于没有信息，不能拿它当匹配结果。
+        path = self.seed_file({"未分类": ["FlowTrak"], "通讯": ["QQ"]})
+        index = load_seeds(path, CATEGORIES)
+        self.assertIsNone(index.match("FlowTrak"))
+        self.assertIsNotNone(index.match("QQ"))
 
     def test_unknown_category_label_is_skipped(self) -> None:
         path = self.seed_file({"不存在的类别": ["QQ"], "通讯": ["WeChat"]})
