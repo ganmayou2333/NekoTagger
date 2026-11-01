@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "_comment": "类别清单来自 NekoTrak 分类页的实测抓取（2026-11-01）。id 必须稳定，label/emoji/patterns 可以随时改。patterns 是进程名或路径的片段，大小写不敏感。",
+  "categories": [
+    {
+      "id": "game",
+      "label": "游戏",
+      "emoji": "🎮",
+      "patterns": [
+        "steam",
+        "epicgameslauncher",
+        "battle.net",
+        "riotclientservices",
+        "gameloop",
+        "wegame",
+        "hypergryph"
+      ],
+      "notes": "Steam 安装目录下的可执行文件由 Steam 库索引规则判定，这里只兜住启动器本身"
+    },
+    {
+      "id": "dev",
+      "label": "开发",
+      "emoji": "💻",
+      "patterns": [
+        "code",
+        "devenv",
+        "pycharm",
+        "idea64",
+        "goland",
+        "webstorm",
+        "clion",
+        "rider64",
+        "curl",
+        "git",
+        "gh",
+        "docker",
+        "wsl",
+        "windowsterminal",
+        "opencode",
+        "cherrystudio",
+        "deepseek",
+        "doubao",
+        "chatgpt",
+        "trae",
+        "sublime_text"
+      ],
+      "notes": "IDE、终端、版本控制与 AI 编程客户端"
+    },
+    {
+      "id": "office",
+      "label": "办公",
+      "emoji": "📊",
+      "patterns": [
+        "winword",
+        "excel",
+        "powerpnt",
+        "outlook",
+        "onenote",
+        "wps",
+        "acrobat",
+        "acrord32",
+        "foxitreader",
+        "notion",
+        "obsidian",
+        "outlookforwindows",
+        "olk.exe"
+      ],
+      "notes": "文档、表格、演示、PDF 与笔记"
+    },
+    {
+      "id": "browse",
+      "label": "浏览",
+      "emoji": "🌐",
+      "patterns": [
+        "msedge",
+        "chrome",
+        "firefox",
+        "brave",
+        "opera",
+        "vivaldi",
+        "iexplore",
+        "360se",
+        "qqbrowser"
+      ],
+      "notes": "浏览器本身"
+    },
+    {
+      "id": "comm",
+      "label": "通讯",
+      "emoji": "💬",
+      "patterns": [
+        "qq",
+        "wechat",
+        "weixin",
+        "discord",
+        "telegram",
+        "slack",
+        "teams",
+        "dingtalk",
+        "feishu",
+        "lark"
+      ],
+      "notes": "即时通讯与会议客户端"
+    },
+    {
+      "id": "tool",
+      "label": "工具",
+      "emoji": "🔧",
+      "patterns": [
+        "7z",
+        "winrar",
+        "idman",
+        "everything",
+        "powertoys",
+        "armoury",
+        "huorong",
+        "hipstray",
+        "cpu-z",
+        "gpuz",
+        "crystaldiskinfo",
+        "powertoys",
+        "ddu"
+      ],
+      "notes": "系统工具、压缩、下载、硬件监控；c:\\windows\\* 与安装器也归这里（NekoTrak 没有单独的「系统」类）"
+    },
+    {
+      "id": "entertainment",
+      "label": "娱乐",
+      "emoji": "✨",
+      "patterns": [
+        "spotify",
+        "cloudmusic",
+        "bilibili",
+        "vlc",
+        "potplayermini",
+        "mpc-hc",
+        "foobar2000",
+        "netflix",
+        "potplayer"
+      ],
+      "notes": "音乐、视频与内容消费"
+    },
+    {
+      "id": "uncategorized",
+      "label": "未分类",
+      "emoji": "🗂️",
+      "patterns": [],
+      "notes": "兜底类别，规则与 AI 都没结论时落这里"
+    }
+  ]
+}

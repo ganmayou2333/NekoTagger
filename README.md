@@ -15,3 +15,28 @@
 ## 状态
 
 脚手架阶段：spec 与 5 张票已就绪，尚未开始实现（票 01 是入口）。
+
+## 用法
+
+```powershell
+# 分类一条路径（人读）
+python -m nekotagger classify 'C:\Windows\System32\openwith.exe'
+# C:\Windows\System32\openwith.exe	tool	rule/certain	path: c:\windows\*
+
+# 契约 JSON
+python -m nekotagger classify 'C:/Program Files/Google/Chrome/Application/chrome.exe' --json
+# {"category": "browse", "confidence": "likely", "source": "rule", ...}
+```
+
+`classify <path>` 的输出固定是这五个键：`category` / `confidence` / `source` / `matched_by` / `classified_at`。
+
+规则优先级：人工 override → 系统路径与安装器 → 进程名/路径关键词 → 兜底 `uncategorized`。
+类别清单在仓库根的 `categories.json`，id 稳定、`patterns` 可随时加；清单缺失或非法时**启动即报错**，不会带着半个清单去分类。
+
+## 测试
+
+```powershell
+python -m unittest discover -s tests -t .
+```
+
+全离线：不联网、不读 NekoTrak 的真实数据。
