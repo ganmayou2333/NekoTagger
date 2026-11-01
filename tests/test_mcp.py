@@ -86,6 +86,26 @@ class ReadonlyToolsTests(ToolsetCase):
         self.assertEqual(stats["entries"], 0)
 
 
+class CacheFreshnessTests(ToolsetCase):
+    def test_stats_see_changes_written_by_another_process(self) -> None:
+        from nekotagger.normalize import normalize_exe_path
+
+        self.assertEqual(self.toolset.cache_stats()["entries"], 0)
+
+        # 模拟 CLI 在别处写缓存
+        writer = Cache.load(self.cache_path, CATEGORIES)
+        writer.put(normalize_exe_path(r"D:\apps\fresh.exe"), {
+            "category": "tool", "confidence": "certain", "source": "rule",
+            "matched_by": "x", "classified_at": 1,
+        })
+        writer.save()
+
+        # 常驻的 toolset 必须看到新数据，而不是启动时的快照
+        stats = self.toolset.cache_stats()
+        self.assertEqual(stats["entries"], 1)
+        self.assertEqual(self.toolset.classify_path(r"D:\apps\fresh.exe")["source"], "cache")
+
+
 class WriteToolsTests(ToolsetCase):
     def test_override_writes_and_takes_effect_immediately(self) -> None:
         exe = self.touch_exe("needs-override.exe")

@@ -48,11 +48,43 @@ class Toolset:
     cache: Cache | None = None
     overrides_path: Path = DEFAULT_OVERRIDES_PATH
     warnings: list[str] = field(default_factory=list)
+    _cache_signature: tuple[int, int] | None = field(default=None, repr=False)
+
+    def _refresh_cache(self) -> None:
+        """磁盘上的缓存被 CLI 改过时重新加载。
+
+        常驻进程持有的是启动时的快照；不重载就会一直报告旧数据（实测：CLI
+        重建缓存后 MCP 仍显示 100 条，磁盘其实只有 94 条）。
+        """
+
+        if self.cache is None:
+            return
+        try:
+            stat = self.cache.path.stat()
+        except OSError:
+            return
+        signature = (stat.st_mtime_ns, stat.st_size)
+        if self._cache_signature == signature:
+            return
+        self.cache = Cache.load(self.cache.path, self.categories)
+        self.warnings.extend(self.cache.warnings)
+        self._cache_signature = signature
+
+    def _touch_cache_signature(self) -> None:
+        if self.cache is None:
+            return
+        try:
+            stat = self.cache.path.stat()
+        except OSError:
+            self._cache_signature = None
+            return
+        self._cache_signature = (stat.st_mtime_ns, stat.st_size)
 
     # ------------------------------------------------------------------ 只读
 
     def classify_path(self, path: str) -> dict[str, object]:
         """把一条 exe 路径分到某个类别，返回契约结构。"""
+        self._refresh_cache()
 
         result = classify(
             path,
@@ -74,6 +106,7 @@ class Toolset:
 
     def classify_many(self, paths: list[str]) -> list[dict[str, object]]:
         """批量分类，逐条返回契约结构（不调模型，缓存命中用缓存）。"""
+        self._refresh_cache()
 
         return [{"path": path, **self.classify_path(path)} for path in paths]
 
@@ -90,6 +123,7 @@ class Toolset:
         ]
 
     def cache_stats(self) -> dict[str, object]:
+        self._refresh_cache()
         if self.cache is None:
             return {"available": False}
         stats = self.cache.stats(self.categories)
@@ -106,6 +140,7 @@ class Toolset:
 
     def override_path(self, path: str, category: str) -> dict[str, object]:
         """写一条人工覆盖。类别必须是清单里已有的 id。"""
+        self._refresh_cache()
 
         if category not in self.categories:
             raise ToolError(
@@ -135,6 +170,7 @@ class Toolset:
 
     def export_results(self, out: str, source: str | None = None) -> dict[str, object]:
         """把缓存导出成只含类别 id 的 JSON。"""
+        self._refresh_cache()
 
         if self.cache is None:
             raise ToolError("没有可用的缓存")
@@ -189,7 +225,7 @@ def build_toolset(
     cache = Cache.load(cache_path, categories)
     warnings.extend(cache.warnings)
 
-    return Toolset(
+    toolset = Toolset(
         categories=categories,
         seeds=seeds,
         steam=steam,
@@ -198,6 +234,8 @@ def build_toolset(
         overrides_path=overrides_target,
         warnings=warnings,
     )
+    toolset._touch_cache_signature()
+    return toolset
 
 
 def _server_class():
