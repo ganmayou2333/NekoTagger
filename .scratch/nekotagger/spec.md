@@ -1,4 +1,4 @@
-# Spec: 应用分类器（AppClassifier）
+# Spec: 应用分类器（NekoTagger）
 
 状态：草案（2026-11-01）。三个决策已定（见文末「决策记录」），类别清单已从 NekoTrak 实测抄录，下一步拆票。
 日期：2026-11-01
@@ -174,11 +174,11 @@ passphrase 来源未定位，继续需要运行时插桩或长时间静态反编
 ### 6. CLI 形态（最小集）
 
 ```text
-appclass classify <exe-path>          # 单条，命中缓存则 0 次网络
-appclass corpus                       # 用 NekoTrak app-icons 语料批量冷启动
-appclass show                         # 打印缓存统计（各类多少、多少 pending）
-appclass override <exe-path> <cat>    # 写 overrides.json
-appclass --json                       # 机器可读输出
+nekotagger classify <exe-path>          # 单条，命中缓存则 0 次网络
+nekotagger corpus                       # 用 NekoTrak app-icons 语料批量冷启动
+nekotagger show                         # 打印缓存统计（各类多少、多少 pending）
+nekotagger override <exe-path> <cat>    # 写 overrides.json
+nekotagger --json                       # 机器可读输出
 ```
 
 ## 测试（全离线）

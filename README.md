@@ -1,4 +1,4 @@
-# AppClassifier
+# NekoTagger
 
 把本机跑过的应用归到 **NekoTrak 那套类别**（游戏 / 开发 / 办公 / 浏览 / 通讯 / 工具 / 娱乐 / 未分类）里的一个小工具。
 
@@ -10,7 +10,7 @@
 - 不常驻、不监控、不做使用时长统计
 - 结果只落一个 JSON 文件，不写进 StatusCast 的 schema
 
-设计与边界见 [`.scratch/app-classifier/spec.md`](.scratch/app-classifier/spec.md)，实现票在 `.scratch/app-classifier/issues/`。
+设计与边界见 [`.scratch/nekotagger/spec.md`](.scratch/nekotagger/spec.md)，实现票在 `.scratch/nekotagger/issues/`。
 
 ## 状态
 
