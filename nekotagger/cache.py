@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .categories import CategorySet
+from .locking import file_lock
 
 CACHE_VERSION = 1
 
@@ -52,7 +53,9 @@ class Cache:
             return cache
 
         try:
-            document = json.loads(target.read_text(encoding="utf-8-sig"))
+            with file_lock(target):
+                text = target.read_text(encoding="utf-8-sig")
+            document = json.loads(text)
         except (OSError, json.JSONDecodeError) as exc:
             cache.warnings.append(f"缓存损坏，已按空缓存处理：{exc}")
             return cache
@@ -144,10 +147,12 @@ class Cache:
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(self.path.name + ".tmp")
         payload = json.dumps(self.to_dict(), ensure_ascii=False, indent=1, sort_keys=True)
-        temporary.write_text(payload, encoding="utf-8")
-        os.replace(temporary, self.path)  # 同卷原子替换
+        temporary = self.path.with_name(self.path.name + ".tmp")
+        # 跨进程锁：MCP 常驻进程与 CLI 可能同时写同一份缓存。
+        with file_lock(self.path):
+            temporary.write_text(payload, encoding="utf-8")
+            os.replace(temporary, self.path)  # 同卷原子替换
         self.dirty = False
 
     # ---------------------------------------------------------------- stats

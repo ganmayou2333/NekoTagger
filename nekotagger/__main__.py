@@ -278,6 +278,24 @@ def cmd_export(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """启动 MCP 服务（stdio）。stdout 归协议所有，提示只走 stderr。"""
+
+    from .mcp_server import build_toolset, create_server
+
+    toolset = build_toolset(
+        categories_path=args.categories,
+        seeds_path=args.seeds,
+        overrides_path=args.overrides,
+        cache_path=args.cache,
+        nekotrak_root=args.nekotrak_root,
+    )
+    _print_warnings(toolset.warnings)
+    server = create_server(toolset=toolset, allow_write=args.allow_write)
+    server.run()
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nekotagger", description="把可执行文件归到 NekoTrak 的类别里。"
@@ -319,6 +337,11 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--out", required=True)
     export_parser.add_argument("--source", default=None, help="只导出某个来源（如 ai）")
     export_parser.set_defaults(func=cmd_export)
+
+    mcp_parser = subparsers.add_parser("mcp", parents=[common], help="启动 MCP 服务（stdio）")
+    mcp_parser.add_argument("--allow-write", action="store_true",
+                            help="注册写工具（override / export），默认只读")
+    mcp_parser.set_defaults(func=cmd_mcp)
 
     return parser
 

@@ -157,6 +157,21 @@ nekotagger export --out F [--source S] [--cache P]
 - `show` / `export` / `override` / `corpus` 均可用；
 - 全离线测试覆盖：规则、种子匹配、Steam、缓存失效、批量 AI（假后端）、提示词隐私。
 
+### 10. MCP 服务（2026-11-01 追加）
+
+同一个库再包一层 MCP 服务，让 agent/客户端直接调用而不用 shell 出去。
+
+| 决策 | 结论 |
+| --- | --- |
+| 实现 | 官方 Python SDK（`mcp` 2.3.0，2.x 里 `FastMCP` 已更名 `MCPServer`） |
+| 传输 | stdio 子进程，不占端口 |
+| 权限 | 默认只读；`--allow-write` 才注册 `override_path` / `export_results` |
+| 并发 | 缓存读写走 `locking.file_lock`（Windows `msvcrt.locking`），MCP 与 CLI 可同时用 |
+| 工具面 | classify_path / classify_many / list_categories / cache_stats（+ 两个写工具） |
+| 测试 | 进程内测业务 + 真实 stdio JSON-RPC 端到端（initialize → tools/list → tools/call） |
+
+MCP 只是薄壳：业务在 `Toolset` 里，不装 SDK 也能测。
+
 ## 测试（全离线）
 
 - 规则层：纯函数表驱动（系统路径、安装器、长/短 pattern、未知）。

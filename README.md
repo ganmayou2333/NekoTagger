@@ -42,6 +42,29 @@ nekotagger override 'D:\apps\weird.exe' dev
 契约固定五个键：`category` / `confidence` / `source` / `matched_by` / `classified_at`。
 `export` 只写类别 id，中文名与 emoji 由消费方查 `categories.json`。
 
+## 作为 MCP 服务
+
+装上可选依赖后，分类器可以直接挂成 MCP 工具（stdio 传输）：
+
+```powershell
+python -m pip install -e ".[mcp]"     # 或仅 pip install mcp
+
+python -m nekotagger mcp                  # 只读工具
+python -m nekotagger mcp --allow-write    # 追加 override_path / export_results
+```
+
+| 工具 | 权限 | 作用 |
+| --- | --- | --- |
+| `classify_path(path)` | 只读 | 一条路径 → 契约结构 |
+| `classify_many(paths[])` | 只读 | 批量（不调模型） |
+| `list_categories()` | 只读 | 类别清单 |
+| `cache_stats()` | 只读 | 缓存统计 |
+| `override_path(path, category)` | 需 `--allow-write` | 写 overrides.json |
+| `export_results(out, source?)` | 需 `--allow-write` | 导出结果 |
+
+在 MCP 客户端里把 command 配成上面那条命令即可（`--cache` / `--categories` / `--nekotrak-root` 都能指路径）。
+stdout 归协议所有，日志只走 stderr；缓存读写加了跨进程锁，MCP 常驻时同时跑 CLI 也不会互相覆盖。
+
 ## 配置
 
 | 文件 | 位置 | 说明 |

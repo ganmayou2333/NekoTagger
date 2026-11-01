@@ -11,6 +11,10 @@ requires-python = ">=3.10"
 
 [project.scripts]
 nekotagger = "nekotagger.__main__:main"
+nekotagger-mcp = "nekotagger.mcp_server:main"
+
+[project.optional-dependencies]
+mcp = ["mcp>=2.3"]
 
 [tool.setuptools]
 packages = ["nekotagger"]
