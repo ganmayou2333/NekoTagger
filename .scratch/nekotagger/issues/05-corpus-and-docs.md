@@ -29,7 +29,7 @@
 - [x] `export --source ai` 只导出 AI 判过的条目，且每条带 `matched_by` 里的理由
 - [x] `override` 写入后，同一路径再 `classify` 立刻以 `source:"override"` 返回
 - [x] 未配置 AI key 时 `corpus` 只跑确定性部分，统计里明确写出「AI 跳过」
-- [ ] `pyproject.toml` 安装后 `nekotagger classify ...` 可直接运行 —— **未验证**：本机 Python 3.14 没装 setuptools，`pip install -e .` 报 `Cannot import setuptools.build_meta`。命令本身可用 `python -m nekotagger` 跑
+- [x] `pyproject.toml` 安装后 `nekotagger classify ...` 可直接运行
 - [x] README 能照做复现：从空目录到跑出结果，不需要读代码
 - [x] 达成 spec §9 的四条判据，并在票里贴出实测数字
 - [x] `git status` 干净；缓存与本地配置确认没被提交
@@ -61,3 +61,14 @@
 **打包这条也没验证成**：`pyproject.toml` 已按约定写好（`[project.scripts] nekotagger = "nekotagger.__main__:main"`），但本机 Python 3.14 环境里**没有 setuptools**，`pip install -e . --no-build-isolation` 直接失败（`Cannot import 'setuptools.build_meta'`），而离线环境装不了 setuptools。所以 `nekotagger` 命令**没有实测过**；当前相当于用 `python -m nekotagger`。
 
 装好 setuptools（或换一个自带构建后端的 Python）后应当一次成功，但在这台机器上它现在是「声明了、没验证」。README 里那句 `pip install -e .` 目前属于这类状态。
+
+**2026-11-01 补记（打包这条后来验证成了）**：当时的失败只是本机 Python 3.14 没装 setuptools，不是打包配置的问题。装上 setuptools（PyPI 可达）后 `pip install -e . --no-build-isolation` 成功，`nekotagger` 与 `nekotagger-mcp` 两个命令都已安装，并从仓库外目录验证过：
+
+```text
+$ cd /tmp && nekotagger classify 'C:\Windows\System32\openwith.exe'
+C:\Windows\System32\openwith.exe   tool   rule/certain   path: c:\windows\*
+
+$ nekotagger-mcp   （stdio，initialize 握手正常返回）
+```
+
+所以票面那条 AC 从「未验证」改回已完成；README 里关于 `pip install -e .` 需要 setuptools 的提示保留（换机器仍可能踩到）。

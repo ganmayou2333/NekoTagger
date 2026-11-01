@@ -19,7 +19,7 @@ pip install -e .        # 需要环境里有 setuptools；提供 nekotagger 命�
 python -m nekotagger    # 不需要安装，直接这样跑
 ```
 
-> 本机 Python 3.14 环境没有 setuptools，`pip install -e .` 还没实测通过；日常用 `python -m nekotagger` 即可。
+> `pip install -e .` 需要环境里有 setuptools（本机 Python 3.14 默认不带，`pip install setuptools` 即可）；不装也能用 `python -m nekotagger`。
 
 ## 用法
 
